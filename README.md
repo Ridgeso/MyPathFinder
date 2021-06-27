@@ -1,15 +1,15 @@
-Hello
-I wrote an A* visualization in Tkinter
+# Hello
+### I wrote an A* visualization in Tkinter
 
-All you need to know are these shortcuts:
-    s + Left button: set the start point
-    e + Left button: set the end point
-    Left button: draw walls
+##### All you need to know are these shortcuts:
+    * s + Left button: set the start point
+    * e + Left button: set the end point
+    * Left button: draw walls
 
 
 If you compile pathfinder.py with the -c argument, the cython version of A* will load.
 But first, you need cython downloaded and then write in terminal in that directory
-python setup.py build_ext -i
+`$ python3 setup.py build_ext -i`
 which will build cython files.
 
 You can also compile astar.py itself and everything will only happen in terminal only
