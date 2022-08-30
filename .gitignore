@@ -1,9 +1,10 @@
 __pycache__
 
+# Folders
+.idea
 build
 
+# Files
 **.html
-
 **.pyd
-
 **.c

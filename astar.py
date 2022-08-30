@@ -1,3 +1,4 @@
+import numpy as np
 from math import inf
 from collections import namedtuple
 from time import sleep, perf_counter
@@ -7,8 +8,9 @@ Coordinates = namedtuple("Coordinates", "x y")
 
 
 class Heap:
-    def __init__(self, size):
-        self.items = [Grid(0, 0, True, inf)] * (size * size)
+    def __init__(self, size: int):
+        self.size = size
+        self.items = [Grid(0, 0, True, inf)] * self.size
         self.current_count = 0
 
     def heappush(self, item):
@@ -91,11 +93,11 @@ class Grid:
 
         self.index = 0
 
-    def __ne__(self, other):
-        return (self.x, self.y) != other
-
     def __eq__(self, other):
         return (self.x, self.y) == other
+
+    def __ne__(self, other):
+        return not self == other
 
     def __lt__(self, other):
         return self.f < other.f
@@ -196,3 +198,81 @@ def main():
 N = 20
 if __name__ == '__main__':
     main()
+
+
+class Board(np.ndarray):
+    def __new__(cls, width: int, height: int):
+        board = super(Board, cls).__new__(cls, (height, width), dtype=np.object)
+        for j in range(board.shape[0]):
+            for i in range(board.shape[1]):
+                board[j, i] = Grid(i, j, False, 0)
+        return board
+
+    def in_bounds(self, y, x):
+        return 0 <= y < self.shape[0] and 0 <= x < self.shape[1]
+
+    def get_neighbors(self, grid):
+        for j in range(-1, 2):
+            for i in range(-1, 2):
+                if i == 0 == j:
+                    continue
+                if 0 <= grid.y + j < self.shape[0] and 0 <= grid.x + i < self.shape[1]:
+                    yield self[grid.y + j, grid.x + i]
+
+
+class AStar:
+    def __init__(self, board):
+        self.board = board
+
+        self.open_set = Heap(self.board.shape[0] * self.board.shape[1])
+        self.been_traveled = set()
+        self.start_pos = None
+        self.end_pos = None
+        self.current_pos = None
+
+    def step(self):
+        self.current_pos = self.open_set.rem_fir()
+        if self.current_pos == self.end_pos:
+            return True
+
+        self.been_traveled.add(self.current_pos)
+
+        for neighbour in self.board.neighbours(self.current_pos):
+            if neighbour.wall or neighbour in self.been_traveled:
+                continue
+
+            temp_g = self.current_pos.g + self.heuristic(neighbour, self.current_pos)
+
+            contain = neighbour not in self.open_set
+
+            if temp_g < neighbour.g or contain:
+                neighbour.g = temp_g
+                neighbour.h = heuristic(neighbour, self.end_pos)
+                neighbour.f = neighbour.g + neighbour.h
+                neighbour.previous = self.current_pos
+
+                if contain:
+                    self.open_set.heappush(neighbour)
+
+        return False
+
+    def calculate_path(self):
+        while self.open_set:
+            path_found = self.step()
+            if path_found:
+                return True
+        return False
+
+    @staticmethod
+    def heuristic(next_pos, pos):
+        x = abs(next_pos.x - pos.x)
+        y = abs(next_pos.y - pos.y)
+        return x + y - 0.585786 * min(x, y)
+
+    def recreate_path(self):
+        path = set()
+        result = self.current_pos
+        while result is not None:
+            path.add(result)
+            result = result.previous
+        return path
