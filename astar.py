@@ -1,5 +1,8 @@
+import copy
+import math
+from abc import ABC, abstractmethod
+
 import numpy as np
-from math import inf
 from collections import namedtuple
 from time import sleep, perf_counter
 
@@ -8,9 +11,13 @@ Coordinates = namedtuple("Coordinates", "x y")
 
 
 class Heap:
-    def __init__(self, size: int):
+    def __init__(self, size: int, fill: object = None):
         self.size = size
-        self.items = [Grid(0, 0, True, inf)] * self.size
+        # self.items = [Grid(0, 0, True, inf)] * self.size
+        self.items = np.ndarray((size,), dtype=object)
+        if fill is not None:
+            for i in range(self.items.shape[0]):
+                self.items[i] = copy.deepcopy(fill)
         self.current_count = 0
 
     def heappush(self, item):
@@ -18,6 +25,16 @@ class Heap:
         self.items[self.current_count] = item
         self._sort_up(item)
         self.current_count += 1
+
+    def _sort_up(self, item):
+        parent = (item.index - 1) // 2
+        while parent >= 0:
+            parent_item = self.items[parent]
+            if item < parent_item:
+                self._swap(parent_item, item)
+            else:
+                break
+            parent = (item.index - 1) // 2
 
     def rem_fir(self):
         first_item = self.items[0]
@@ -43,16 +60,6 @@ class Heap:
             else:
                 return
 
-    def _sort_up(self, item):
-        parent = (item.index-1)//2
-        while parent >= 0:
-            parent_item = self.items[parent]
-            if item < parent_item:
-                self._swap(parent_item, item)
-            else:
-                break
-            parent = (item.index-1)//2
-
     def _swap(self, item_a, item_b):
         self.items[item_a.index] = item_b
         self.items[item_b.index] = item_a
@@ -63,6 +70,18 @@ class Heap:
 
     def __len__(self):
         return self.current_count
+
+
+class IHeapItem(ABC):
+    @abstractmethod
+    def heap_item(self) -> int:
+        pass
+
+    def __eq__(self, other) -> bool:
+        pass
+
+    def __lt__(self, other) -> bool:
+        pass
 
 
 def create_path(result):
@@ -80,7 +99,7 @@ def heuristic(a, b):
     return x + y - 0.585786 * min(x, y)
 
 
-class Grid:
+class Grid(IHeapItem):
     def __init__(self, x, y, wall, f_cost):
         self.x = x
         self.y = y
@@ -94,22 +113,31 @@ class Grid:
         self.index = 0
 
     def __eq__(self, other):
+        if other is None:
+            return False
         return (self.x, self.y) == other
 
     def __ne__(self, other):
         return not self == other
 
     def __lt__(self, other):
+        if other is None:
+            return True
         return self.f < other.f
 
     def __gt__(self, other):
+        if other is None:
+            return False
         return self.f > other.f
 
-    def __str__(self):
-        return f"({self.x} {self.y})"
+    def __repr__(self):
+        return f"Grid({self.x} {self.y})"
 
     def __hash__(self):
         return hash((self.x, self.y))
+
+    def heap_item(self) -> int:
+        return self.index
 
 
 def neighbours(pos, s_x, s_y):
@@ -195,18 +223,13 @@ def main():
     print((perf_counter()-start)*1000)
 
 
-N = 20
-if __name__ == '__main__':
-    main()
-
-
 class Board(np.ndarray):
     def __new__(cls, width: int, height: int):
-        board = super(Board, cls).__new__(cls, (height, width), dtype=np.object)
-        for j in range(board.shape[0]):
-            for i in range(board.shape[1]):
-                board[j, i] = Grid(i, j, False, 0)
-        return board
+        new_board = super(Board, cls).__new__(cls, (height, width), dtype=object)
+        for j in range(new_board.shape[0]):
+            for i in range(new_board.shape[1]):
+                new_board[j, i] = Grid(i, j, False, 0)
+        return new_board
 
     def in_bounds(self, y, x):
         return 0 <= y < self.shape[0] and 0 <= x < self.shape[1]
@@ -224,7 +247,8 @@ class AStar:
     def __init__(self, board):
         self.board = board
 
-        self.open_set = Heap(self.board.shape[0] * self.board.shape[1])
+        self.open_set = Heap(self.board.shape[0] * self.board.shape[1], Grid(0, 0, True, math.inf))
+
         self.been_traveled = set()
         self.start_pos = None
         self.end_pos = None
@@ -237,7 +261,7 @@ class AStar:
 
         self.been_traveled.add(self.current_pos)
 
-        for neighbour in self.board.neighbours(self.current_pos):
+        for neighbour in self.board.get_neighbors(self.current_pos):
             if neighbour.wall or neighbour in self.been_traveled:
                 continue
 
@@ -269,10 +293,20 @@ class AStar:
         y = abs(next_pos.y - pos.y)
         return x + y - 0.585786 * min(x, y)
 
-    def recreate_path(self):
+    @staticmethod
+    def recreate_path(pos):
         path = set()
-        result = self.current_pos
-        while result is not None:
-            path.add(result)
-            result = result.previous
+        while pos is not None:
+            path.add(pos)
+            pos = pos.previous
         return path
+
+
+N = 20
+if __name__ == '__main__':
+    # main()
+    game_board = Board(2, 4)
+    print(game_board)
+    print()
+    astar = AStar(game_board)
+    print(astar.open_set.items)
