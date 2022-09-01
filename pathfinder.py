@@ -1,3 +1,4 @@
+import tkinter as tk
 from tkinter import Button, Label, Scale, Tk, Canvas
 from tkinter.constants import HORIZONTAL
 import time
@@ -14,7 +15,7 @@ else:
 
 
 class App:
-    def __init__(self, win_width: int, win_height: int):
+    def __init__(self, win_width: int, win_height: int) -> None:
         self.win_width = win_width
         self.win_height = win_height
         self.shift = 2
@@ -62,10 +63,10 @@ class App:
         self.speed.pack()
         self.finished.pack()
 
-    def run_app(self):
+    def run_app(self) -> None:
         self.root.mainloop()
 
-    def fill_app(self):
+    def fill_app(self) -> None:
         color = self.colors["wall"]
         self.canvas.create_rectangle(
             0, 0,
@@ -81,7 +82,7 @@ class App:
                                     x + self.shift, self.win_height + self.shift,
                                     fill=color)
 
-    def reset(self):
+    def reset(self) -> None:
         if self.run_btn["text"] == "Start":
             # Reinitialization
             self.board = Board(self.board_size, self.board_size)
@@ -90,7 +91,7 @@ class App:
             self.fill_app()
             self.finished.config(text="Set the Start and End point to start")
 
-    def set_grid(self, y, x, grid_type):
+    def set_grid(self, y: int, x: int, grid_type: str) -> None:
         if self.board.in_bounds(y, x):
             if grid_type == "start":
                 if self.astar.start_pos is None:  # Set
@@ -135,66 +136,60 @@ class App:
                 fill=color
             )
 
-    def get_coordinates(self, y, x):
+    def get_coordinates(self, y: int, x: int) -> Tuple[int, int]:
         coord_y = (y - self.shift) // self.grid_height
         coord_x = (x - self.shift) // self.grid_width
         return coord_y, coord_x
 
-    def set_start(self, event):
+    def set_start(self, event: tk.Event) -> None:
         y, x = self.get_coordinates(event.y, event.x)
         self.set_grid(y, x, "start")
 
-    def set_end(self, event):
+    def set_end(self, event: tk.Event) -> None:
         y, x = self.get_coordinates(event.y, event.x)
         self.set_grid(y, x, "end")
 
-    def set_wall(self, event):
+    def set_wall(self, event: tk.Event) -> None:
         y, x = self.get_coordinates(event.y, event.x)
         self.set_grid(y, x, "wallT")
 
-    def del_wall(self, event):
+    def del_wall(self, event: tk.Event) -> None:
         y, x = self.get_coordinates(event.y, event.x)
         self.set_grid(y, x, "wallF")
 
-    def draw_path(self, pos, mode):
+    def draw_path(self, pos: Grid, mode: str) -> None:
         if mode == "path":
-            path = self.astar.recreate_path(pos)
-            for p in path:
-                y = p.y * self.win_height
-                x = p.x * self.win_width
+            found_path = self.astar.recreate_path(pos)
+            for p in found_path:
+                y = p.y * self.grid_height
+                x = p.x * self.grid_width
                 self.canvas.create_rectangle(
-                    self.shift + x, self.shift + y,
-                    self.shift + x + self.win_width, self.shift + y + self.win_height,
+                    x + self.shift, y + self.shift,
+                    x + self.grid_width + self.shift, y + self.grid_height + self.shift,
                     fill=self.colors["path"]
                 )
             return
 
         color = self.colors[mode]
-
-        # self.canvas.create_rectangle(
-        #     pos.x * size + shift, pos.y * size + shift,
-        #     pos.x * size + shift + size, pos.y * size + shift + size,
-        #     fill=color
-        # )
-
         self.canvas.create_rectangle(
-            pos.x * self.win_width, pos.y * self.win_height,
-            pos.x * self.win_width + self.win_width, pos.y * self.win_height + self.win_height,
+            pos.x * self.grid_width + self.shift, pos.y * self.grid_height + self.shift,
+            (pos.x + 1) * self.grid_width + self.shift, (pos.y + 1) * self.grid_height + self.shift,
             fill=color
         )
 
-    def _find_path(self):
+    def _find_path(self) -> None:
         if self.astar.open_set:
+            self.astar.current_pos = self.astar.open_set.rem_fir()
+
+            state = self.astar.step()
 
             if self.speed.get():
-                print(self.astar.current_pos)
                 self.draw_path(self.astar.current_pos, "been")
                 for neighbour in self.board.get_neighbors(self.astar.current_pos):
-                    if neighbour.wall or neighbour in self.astar.open_set:
+                    if neighbour.wall or neighbour not in self.astar.open_set:
                         continue
                     self.draw_path(neighbour, "neighbor")
 
-            state = self.astar.step()
             if state:
                 self.draw_path(self.astar.current_pos, "path")
                 return
@@ -203,50 +198,21 @@ class App:
         else:
             self.finished.config(text="Path Not Found")
 
-    def start_finding(self):
+    def start_finding(self) -> None:
         if self.astar.start_pos is not None and self.astar.end_pos is not None:
             self.run_btn.config(text="Stop")
 
             start_time = time.perf_counter()
-            # self.astar.open_set.heappush(self.astar.start_pos)
-            self.astar.current_pos = self.astar.start_pos
+
+            self.astar.open_set.heappush(self.astar.start_pos)
             self._find_path()
+
             end_time = time.perf_counter()
 
             self.finished.config(text=f"Finished in {round((end_time - start_time) * 1000, 1)} ms")
-
             self.run_btn.config(text="Start")
 
 
 if __name__ == "__main__":
     app = App(500, 500)
     app.run_app()
-    # init()
-    #
-    # root = Tk()
-    # root.title("Path Finder")
-    # root.geometry(f"{win_size+50}x{win_size+150}")
-    #
-    # canvas = Canvas(root, width=win_size+shift, height=win_size+shift, bg="white")
-    #
-    # canvas.bind_all("<Motion>", lambda event: canvas.focus_set())
-    # canvas.bind("<B1-Motion>", draw_walls)
-    # canvas.bind("<B3-Motion>", del_walls)
-    # canvas.bind("<s><Button-1>", make_start)
-    # canvas.bind("<e><Button-1>", make_end)
-    #
-    # fill_grid()
-    #
-    # start_btn = Button(root, text="Start", command=start_finding)
-    # reset_btn = Button(root, text="Reset", command=try_reset)
-    # speed = Scale(root, from_=0, to=40, orient=HORIZONTAL)
-    #
-    # finished = Label(root, text="Set Start and End point to start")
-    #
-    # canvas.pack()
-    # start_btn.pack()
-    # reset_btn.pack()
-    # speed.pack()
-    # finished.pack()
-    #
-    # root.mainloop()
