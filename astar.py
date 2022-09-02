@@ -3,7 +3,6 @@ from typing import (
     Optional, Generic,
     Type, TypeVar, Iterator
 )
-import random
 import math
 from abc import ABC, abstractmethod
 
@@ -27,20 +26,20 @@ class Heap(Generic[T]):
     def heappush(self, item: T) -> None:
         if self.current_count >= self.size:
             raise IndexError("Heap is full")
-        item.index = self.current_count
+        item.heap_index = self.current_count
         self.items[self.current_count] = item
         self._sort_up(item)
         self.current_count += 1
 
     def _sort_up(self, item: T) -> None:
-        parent = (item.index - 1) // 2
+        parent = (item.heap_index - 1) // 2
         while parent >= 0:
             parent_item = self.items[parent]
             if item < parent_item:
                 self._swap(parent_item, item)
             else:
                 break
-            parent = (item.index - 1) // 2
+            parent = (item.heap_index - 1) // 2
 
     def rem_fir(self) -> T:
         if self.current_count < 0:
@@ -48,14 +47,14 @@ class Heap(Generic[T]):
         first_item = self.items[0]
         self.current_count -= 1
         self.items[0] = self.items[self.current_count]
-        self.items[0].index = 0
+        self.items[0].heap_index = 0
         self._sort_down(self.items[0])
         return first_item
 
     def _sort_down(self, item: T) -> None:
         while True:
-            child_left = item.index*2+1
-            child_right = item.index*2+2
+            child_left = item.heap_index * 2 + 1
+            child_right = item.heap_index * 2 + 2
             if child_left < self.current_count:
                 swap_index = child_left
                 if child_right < self.current_count:
@@ -69,12 +68,12 @@ class Heap(Generic[T]):
                 return
 
     def _swap(self, item_a: T, item_b: T) -> None:
-        self.items[item_a.index] = item_b
-        self.items[item_b.index] = item_a
-        item_a.index, item_b.index = item_b.index, item_a.index
+        self.items[item_a.heap_index] = item_b
+        self.items[item_b.heap_index] = item_a
+        item_a.heap_index, item_b.heap_index = item_b.heap_index, item_a.heap_index
 
     def __contains__(self, item: T) -> bool:
-        return self.items[item.index] == item
+        return self.items[item.heap_index] == item
 
     def __len__(self) -> int:
         return self.current_count
@@ -82,15 +81,21 @@ class Heap(Generic[T]):
 
 class IHeapItem(ABC, Generic[T]):
     @abstractmethod
-    def heap_item(self) -> int:
-        pass
-
-    @abstractmethod
     def __eq__(self, other: T) -> bool:
         pass
 
     @abstractmethod
     def __lt__(self, other: T) -> bool:
+        pass
+
+    @property
+    @abstractmethod
+    def heap_index(self) -> int:
+        pass
+
+    @heap_index.setter
+    @abstractmethod
+    def heap_index(self, value: int) -> None:
         pass
 
 
@@ -121,8 +126,13 @@ class Grid(IHeapItem):
     def __hash__(self) -> int:
         return hash((self.x, self.y))
 
-    def heap_item(self) -> int:
+    @property
+    def heap_index(self) -> int:
         return self.index
+
+    @heap_index.setter
+    def heap_index(self, value: int) -> None:
+        self.index = value
 
 
 class Board(np.ndarray):
@@ -141,7 +151,7 @@ class Board(np.ndarray):
             for i in range(-1, 2):
                 if i == 0 == j:
                     continue
-                if 0 <= grid.y + j < self.shape[0] and 0 <= grid.x + i < self.shape[1]:
+                if self.in_bounds(grid.y + j, grid.x + i):
                     yield self[grid.y + j, grid.x + i]
 
 
@@ -199,9 +209,9 @@ class AStar:
         y = abs(next_pos.y - pos.y)
         return x + y - 0.585786 * min(x, y)
 
-    @staticmethod
-    def recreate_path(pos: Grid) -> Set[Grid]:
+    def recreate_path(self) -> Set[Grid]:
         project_path = set()
+        pos = self.current_pos
         while pos is not None:
             project_path.add(pos)
             pos = pos.previous
@@ -210,9 +220,10 @@ class AStar:
 
 def main() -> int:
     from os import system
+    import random
 
-    display = False
-    delay = 0.0
+    display = True
+    delay = 0.5
 
     game_board = Board(10, 10)
     for i in game_board:
@@ -222,10 +233,7 @@ def main() -> int:
     astar.start_pos = game_board[0, 0]
     astar.end_pos = game_board[-1, -1]
 
-    if_path = astar.calculate_path()
     path = set()
-    if if_path:
-        path = astar.recreate_path(astar.current_pos)
 
     def write() -> None:
         for level in game_board:
@@ -242,18 +250,20 @@ def main() -> int:
 
     def run() -> str:
         nonlocal path
+        astar.open_set.heappush(astar.start_pos)
         while astar.open_set:
             astar.current_pos = astar.open_set.rem_fir()
 
             if display:
                 system('cls')
+                path = astar.recreate_path()
                 write()
                 sleep(delay)
 
             state = astar.step()
             if state:
                 system('cls')
-                path = astar.recreate_path(astar.current_pos)
+                path = astar.recreate_path()
                 write()
                 return "Path Found"
         return "Path Not Found"

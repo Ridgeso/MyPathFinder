@@ -1,225 +1,207 @@
 from __future__ import print_function
 from collections import namedtuple
 from time import sleep, perf_counter
+from random import randint
+
+from libc.stdlib cimport malloc, free
+cimport numpy as np
 
 cdef extern from "math.h":
     float INFINITY
     double fabs(double)
 
 
-cdef struct Coordinates:
+cdef struct Grid_t:
     int x, y
+    double f
+    int index
+
+
+cdef bint eqGrid(Grid_t a, Grid_t b):
+    return a.x == b.x and a.y == b.y
 
 
 cdef class Heap:
-    cdef list items
-    cdef int current_count
+    cdef Grid_t* items
+    cdef public int length
+    cdef np.ndarray board
 
-    def __cinit__(self, int size):
-        self.items = [Grid(0, 0, True, INFINITY)] * (size * size)
-        self.current_count = 0
+    def __cinit__(self, int size, board):
+        self.items = <Grid_t*>malloc(size * sizeof(Grid_t))
+        for i in range(size):
+            self.items[i].f = INFINITY
+        self.board = board
+        self.length = 0
+    
+    def __dealloc__(self):
+        free(<void*>self.items)
 
     cpdef heappush(self, Grid item):
-        item.index = self.current_count
-        self.items[self.current_count] = item
-        self._sort_up(item)
-        self.current_count += 1
+        item.body.index = self.length
+        self.items[self.length] = item.body
+        self._sort_up(item.body)
+        self.length += 1
+
+    cdef _sort_up(self, Grid_t item):
+        cdef int parent = (item.index-1)//2
+        cdef Grid_t parent_item
+        while parent >= 0:
+            parent_item = self.items[parent]
+            if item.f < parent_item.f:
+                self._swap(parent_item, item)
+            else:
+                break
+            parent = (item.index-1)//2
 
     cpdef Grid rem_fir(self):
-        cdef Grid first_item = self.items[0]
-        self.current_count -= 1
-        self.items[0] = self.items[self.current_count]
+        cdef Grid_t first_item = self.items[0]
+        self.length -= 1
+        self.items[0] = self.items[self.length]
         self.items[0].index = 0
         self._sort_down(self.items[0])
-        return first_item
+        return self.board[first_item.y, first_item.x]
 
-    cdef _sort_down(self, Grid item):
+    cdef _sort_down(self, Grid_t item):
         cdef int child_left, child_right
         cdef int swap_index
         while True:
-            child_left = item.index*2+1
-            child_right = item.index*2+2
-            if child_left < self.current_count:
+            child_left = item.index * 2 + 1
+            child_right = item.index * 2 + 2
+            if child_left < self.length:
                 swap_index = child_left
-                if child_right < self.current_count:
-                    if self.items[child_left] > self.items[child_right]:
+                if child_right < self.length:
+                    if self.items[child_left].f < self.items[child_right].f:
                         swap_index = child_right
-                if self.items[swap_index] < item:
+                if self.items[swap_index].f < item.f:
                     self._swap(item, self.items[swap_index])
                 else:
                     return
             else:
                 return
 
-    cdef _sort_up(self, Grid item):
-        cdef int parent = (item.index-1)//2
-        cdef Grid parent_item
-        while parent >= 0:
-            parent_item = self.items[parent]
-            if item < parent_item:
-                self._swap(parent_item, item)
-            else:
-                break
-            parent = (item.index-1)//2
-
-    cdef _swap(self, Grid item_a, Grid item_b):
+    cdef _swap(self, Grid_t item_a, Grid_t item_b):
         self.items[item_a.index] = item_b
         self.items[item_b.index] = item_a
-        item_a.index, item_b.index = item_b.index, item_a.index
-
-    def __contains__(self, Grid item):
-        return self.items[item.index] == item
-
-    def __len__(self):
-        return self.current_count
-
-
-cpdef set create_path(Grid result):
-    cdef set show = set([result])
-    result = result.previous
-    while result is not None:
-        show.add(result)
-        result = result.previous
-    return show
+        
+        self.items[item_a.index].index = item_a.index
+        self.items[item_b.index].index = item_b.index
+        
+    cpdef bint contains(self, Grid_t item):
+        return eqGrid(self.items[item.index], item)
 
 
-cdef double heuristic(Grid a, Grid b):
+cdef double heuristic(Grid_t next_pos, Grid_t pos):
     cdef double x, y
-    x = a.x - b.x
-    y = a.y - b.y
-    x = fabs(x)
-    y = fabs(y)
+    x = fabs(next_pos.x - pos.x)
+    y = fabs(next_pos.y - pos.y)
     return x + y - 0.585786 * min(x, y)
 
 
 cdef class Grid:
-    cdef public int x, y
+    cdef public Grid_t body
     cdef public bint wall
-    cdef public double f, g, h
-    cpdef public Grid previous
-    cdef public int index
+    cdef public double g, h
+    cdef public Grid previous
 
-    def __cinit__(self, int x, int y, bint wall, double f_cost):
-        self.x = x
-        self.y = y
+    def __cinit__(self, int x, int y, bint wall):
+        self.body.x = x
+        self.body.y = y
+
         self.wall = wall
         self.previous = None
 
-        self.f = f_cost
         self.g = 0
         self.h = 0
+        self.body.f = 0
 
-        self.index = 0
+        self.body.index = 0
 
-    def __ne__(self, other):
-        return (self.x, self.y) != other
-
-    def __eq__(self, other):
-        return (self.x, self.y) == other
-
-    def __lt__(self, other):
-        return self.f < other.f
-
-    def __gt__(self, other):
-        return self.f > other.f
+    cpdef eq(self, Grid other):
+        return eqGrid(self.body, other.body)
 
     def __str__(self):
-        return f"({self.x} {self.y})"
+        return f"({self.body.x} {self.body.y})"
 
     def __hash__(self):
-        return hash((self.x, self.y))
+        return hash((self.body.x, self.body.y))
+    
+    cpdef setF(self, double new_f):
+        self.body.f = new_f
 
 
-def neighbours(Grid pos, int s_x, int s_y):
-    cdef int i, j
-    cdef Coordinates n
-    for i in range(-1, 2):
-        for j in range(-1, 2):
+class Board(np.ndarray):
+    def __new__(cls, width, height):
+        new_board = super(Board, cls).__new__(cls, (height, width), dtype=object)
+        for j in range(new_board.shape[0]):
+            for i in range(new_board.shape[1]):
+                new_board[j, i] = Grid(i, j, False)
+        return new_board
+
+    def in_bounds(self, y, x):
+        return 0 <= y < self.shape[0] and 0 <= x < self.shape[1]
+
+
+cpdef get_neighbors(board, Grid grid):
+    cdef list neighbors
+    neighbors = []
+    for j in range(-1, 2):
+        for i in range(-1, 2):
             if i == 0 == j:
                 continue
-            if 0 <= pos.x+i < s_x and 0 <= pos.y+j < s_y:
-                n.x = pos.x+i
-                n.y = pos.y+j
-                yield n
+            if board.in_bounds(grid.body.y + j, grid.body.x + i):
+                neighbors.append(board[grid.body.y + j, grid.body.x + i])
+    return neighbors
 
 
-cpdef Grid a_star(list maze, Heap opened, set closed, Grid pos, Grid end):
+class AStar:
+    def __init__(self, board):
+        self.board = board
 
-    if pos == end:
-        return pos
+        self.open_set = Heap(self.board.shape[0] * self.board.shape[1], self.board)
 
-    closed.add(pos)
+        self.been_traveled = set()
+        self.start_pos = None
+        self.end_pos = None
+        self.current_pos = None
 
-    cdef Coordinates n
-    cdef Grid current_neighbour
-    for n in neighbours(pos, len(maze), len(maze[0])):
-        if (n.x, n.y) in closed or maze[n.x][n.y].wall:
-            continue
+    def step(self):
+        if self.current_pos.eq(self.end_pos):
+            return True
 
-        current_neighbour = maze[n.x][n.y]
-        temp_g = pos.g + heuristic(current_neighbour, pos)
+        self.been_traveled.add(self.current_pos)
 
-        contain = current_neighbour not in opened
+        for neighbor in get_neighbors(self.board, self.current_pos):
+            if neighbor.wall or neighbor in self.been_traveled:
+                continue
 
-        if temp_g < current_neighbour.g or contain:
-            current_neighbour.g = temp_g
-            current_neighbour.h = heuristic(current_neighbour, end)
-            current_neighbour.f = current_neighbour.g + current_neighbour.h
-            current_neighbour.previous = pos
+            temp_g = self.current_pos.g + heuristic(neighbor.body, self.current_pos.body)
 
-            if contain:
-                opened.heappush(current_neighbour)
+            contain = not self.open_set.contains(neighbor.body)
 
-    return None
+            if temp_g < neighbor.g or contain:
+                neighbor.g = temp_g
+                neighbor.h = heuristic(neighbor.body, self.end_pos.body)
+                neighbor.setF(neighbor.g + neighbor.h)
+                neighbor.previous = self.current_pos
 
+                if contain:
+                    self.open_set.heappush(neighbor)
 
-def main():
-    from random import randint
-    from os import system
+        return False
 
-    plane = [[Grid(i, j, not randint(0, 2), 0) for j in range(N)] for i in range(N)]
-    end_pos = plane[N-1][N-1]
-    openset = Heap(N)
-    openset.heappush(plane[0][0])
-    been = set()
-    display = False
-    delay = 0.0
+    def calculate_path(self):
+        self.open_set.heappush(self.start_pos)
+        while self.open_set.length:
+            self.current_pos = self.open_set.rem_fir()
+            path_found = self.step()
+            if path_found:
+                return True
+        return False
 
-    def write(path, maze, size):
-        for i in range(size):
-            for j in range(size):
-                if (i, j) in path:
-                    print('0', end=" ")
-                elif maze[i][j].wall:
-                    print('\\', end=" ")
-                elif maze[i][j] in been:
-                    print('.', end=" ")
-                else:
-                    print(' ', end=" ")
-            print()
-
-    def run():
-        while openset:
-            current_pos = openset.rem_fir()
-
-            if display:
-                system('cls')
-                write(create_path(current_pos), plane, N)
-                sleep(delay)
-
-            state = a_star(plane, openset, been, current_pos, end_pos)
-            if state is not None:
-                system('cls')
-                write(create_path(state), plane, N)
-                return "Path Found"
-        return "Path Not Found"
-
-    start = perf_counter()
-    print(run())
-    print((perf_counter()-start)*1000)
-    run()
-
-
-N = 20
-if __name__ == '__main__':
-    main()
+    @staticmethod
+    def recreate_path(pos):
+        project_path = set()
+        while pos is not None:
+            project_path.add(pos)
+            pos = pos.previous
+        return project_path

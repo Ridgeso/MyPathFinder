@@ -159,7 +159,7 @@ class App:
 
     def draw_path(self, pos: Grid, mode: str) -> None:
         if mode == "path":
-            found_path = self.astar.recreate_path(pos)
+            found_path = self.astar.recreate_path()
             for p in found_path:
                 y = p.y * self.grid_height
                 x = p.x * self.grid_width

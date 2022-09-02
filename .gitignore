@@ -7,4 +7,4 @@ build
 # Files
 **.html
 **.pyd
-**.c
+**.[ch]
