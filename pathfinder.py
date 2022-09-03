@@ -1,3 +1,4 @@
+from typing import Tuple
 import tkinter as tk
 from tkinter import Button, Label, Scale, Tk, Canvas
 from tkinter.constants import HORIZONTAL
@@ -170,12 +171,13 @@ class App:
                 )
             return
 
-        color = self.colors[mode]
-        self.canvas.create_rectangle(
-            pos.x * self.grid_width + self.shift, pos.y * self.grid_height + self.shift,
-            (pos.x + 1) * self.grid_width + self.shift, (pos.y + 1) * self.grid_height + self.shift,
-            fill=color
-        )
+        if pos != self.astar.start_pos:
+            color = self.colors[mode]
+            self.canvas.create_rectangle(
+                pos.x * self.grid_width + self.shift, pos.y * self.grid_height + self.shift,
+                (pos.x + 1) * self.grid_width + self.shift, (pos.y + 1) * self.grid_height + self.shift,
+                fill=color
+            )
 
     def _find_path(self) -> None:
         if self.astar.open_set:
@@ -198,6 +200,27 @@ class App:
         else:
             self.finished.config(text="Path Not Found")
 
+    def _Cfind_path(self) -> None:
+        if self.astar.open_set:
+            self.astar.current_pos = self.astar.open_set.rem_fir()
+
+            state = self.astar.step()
+
+            if self.speed.get():
+                self.draw_path(self.astar.current_pos, "been")
+                for neighbour in get_neighbors(self.board, self.astar.current_pos):
+                    if neighbour.wall or not self.astar.open_set.contains(neighbour):
+                        continue
+                    self.draw_path(neighbour, "neighbor")
+
+            if state:
+                self.draw_path(self.astar.current_pos, "path")
+                return
+
+            self.root.after(int(self.speed.get()), self._Cfind_path)
+        else:
+            self.finished.config(text="Path Not Found")
+
     def start_finding(self) -> None:
         if self.astar.start_pos is not None and self.astar.end_pos is not None:
             self.run_btn.config(text="Stop")
@@ -205,7 +228,10 @@ class App:
             start_time = time.perf_counter()
 
             self.astar.open_set.heappush(self.astar.start_pos)
-            self._find_path()
+            if args.c:
+                self._Cfind_path()
+            else:
+                self._find_path()
 
             end_time = time.perf_counter()
 

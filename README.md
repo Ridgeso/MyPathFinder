@@ -14,4 +14,4 @@ which will build cython files.
 
 You can also compile astar.py itself and everything will only happen in terminal only
 I leaved test.py which seys how much faster cython version is faster than python
-I was able to get up to 3 times the efficient
+I was able to get up to 9 times the efficient

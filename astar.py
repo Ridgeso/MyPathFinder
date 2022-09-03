@@ -105,6 +105,7 @@ class Grid(IHeapItem):
         self.y = y
         self.wall = wall
         self.previous = None
+        self.been_traveled = False
 
         self.f = f_cost
         self.g = 0
@@ -164,7 +165,6 @@ class AStar:
             (Grid, {"x": 0, "y": 0, "wall": True, "f_cost": math.inf})
         )
 
-        self.been_traveled = set()
         self.start_pos = None
         self.end_pos = None
         self.current_pos = None
@@ -173,10 +173,10 @@ class AStar:
         if self.current_pos == self.end_pos:
             return True
 
-        self.been_traveled.add(self.current_pos)
-
+        self.current_pos.been_traveled = True
+        
         for neighbour in self.board.get_neighbors(self.current_pos):
-            if neighbour.wall or neighbour in self.been_traveled:
+            if neighbour.wall or neighbour.been_traveled:
                 continue
 
             temp_g = self.current_pos.g + self.heuristic(neighbour, self.current_pos)
@@ -222,8 +222,9 @@ def main() -> int:
     from os import system
     import random
 
-    display = True
+    display = False
     delay = 0.5
+    testit = True
 
     game_board = Board(10, 10)
     for i in game_board:
@@ -242,7 +243,7 @@ def main() -> int:
                     print('0', end=" ")
                 elif g.wall:
                     print('\\', end=" ")
-                elif g in astar.been_traveled:
+                elif g.been_traveled:
                     print('.', end=" ")
                 else:
                     print(' ', end=" ")
@@ -268,9 +269,18 @@ def main() -> int:
                 return "Path Found"
         return "Path Not Found"
 
-    start = perf_counter()
-    print(run())
-    print((perf_counter()-start)*1000)
+    if display:
+        print(run())
+    else:
+        start = perf_counter()
+        if_path = astar.calculate_path()
+        end = perf_counter() - start
+        if if_path:
+            path = astar.recreate_path()
+        if not testit:
+            print(end * 1000)
+            write()
+
 
     return 0
 
