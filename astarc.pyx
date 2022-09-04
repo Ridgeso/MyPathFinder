@@ -11,6 +11,178 @@ cdef extern from "math.h":
     double fabs(double)
 
 
+cdef struct Grid_t:
+    int x, y
+    bint wall
+    bint been_traveled
+    double g, h, f
+    int index
+    Grid_t* previous
+
+
+cdef struct Board_t:
+    int y, x
+    Grid_t** board
+    Grid_t* neighbors[8]
+
+
+cdef struct Heap_t:
+    int size
+    int length
+    Grid_t** items
+
+
+cdef inline Grid_t initGrid():
+    cdef Grid_t grid
+    grid.x = 0
+    grid.y = 0
+    grid.wall = False
+    grid.g = 0.0
+    grid.h = 0.0
+    grid.f = 0.0
+    grid.index = 0
+    grid.previous = NULL
+    return grid
+
+
+cdef void printGrid(Grid_t* g):
+    printf("%10d %10d %10d %10.4lf %10.4lf %10.4lf %10d %p\n", g.x, g.y, g.wall, g.g, g.h, g.f, g.index, g.previous)
+
+
+cdef bint eqGrid(Grid_t* a, Grid_t* b):
+    return a.x == b.x and a.y == b.y
+
+
+cdef Board_t initBoard(int y, int x):
+    cdef Board_t board
+    board.y = y
+    board.x = x
+    board.board = <Grid_t**>malloc(y * sizeof(Grid_t*))
+
+    cdef int j, i
+    for j in range(y):
+        board.board[j] = <Grid_t*>malloc(x * sizeof(Grid_t))
+        for i in range(x):
+            board.board[j][i] = initGrid()
+            board.board[j][i].y = j
+            board.board[j][i].x = i
+
+    return board
+
+
+cdef void freeBoard(Board_t* board):
+    cdef int i
+    for i in range(board.y):
+        free(<void*>board.board[i])
+    free(<void*>board.board)
+
+
+cdef inline bint in_bounds(Board_t* board, y, x):
+    return 0 <= y < board.y and 0 <= x < board.x
+
+
+cdef inline Grid_t* getGrid(Board_t* board, y, x):
+    return &board.board[y][x]
+
+
+cdef Grid_t** getNeighbors(Board_t* board, y, x):
+    cdef int neighborCount = 0
+    cdef int i, j
+    for j in range(-1, 2):
+        for i in range(-1, 2):
+            if i == 0 == j:
+                continue
+            if in_bounds(board, y + j, x + i):
+                board.neighbors[neighborCount] = getGrid(board, y + j, x + i)
+                neighborCount += 1
+    if neighborCount < 8:
+        board.neighbors[neighborCount] = NULL
+    return board.neighbors
+
+
+cdef Heap_t initHeap(int size):
+    cdef int i
+    cdef Heap_t heap
+    heap.size = size
+    heap.length = 0
+    heap.items = <Grid_t**>malloc(size * sizeof(Grid_t*))
+    
+    for i in range(size):
+        heap.items[i] = <Grid_t*>malloc(sizeof(Grid_t))
+    return heap
+
+
+cdef void printHeap(Heap_t* heap):
+    cdef int i
+    printf("Size: %d | Length: %d\n", heap.size, heap.length)
+    for i in range(heap.size):
+        printGrid(heap.items[i])
+
+
+cdef void freeHeap(Heap_t* heap):
+    cdef int i
+    for i in range(heap.size):
+        free(<void*>heap.items[i])
+    free(<void*>heap.items)
+
+
+cdef void heappush(Heap_t* heap, Grid_t* item):
+    item.index = heap.length
+    heap.items[heap.length] = item
+    heapSortUp(heap, item)
+    heap.length += 1
+
+
+cdef void heapSortUp(Heap_t* heap, Grid_t* item):
+    cdef int parent = (item.index - 1) // 2
+    cdef Grid_t* parent_item
+    while parent >= 0:
+        parent_item = heap.items[parent]
+        if item.f < parent_item.f:
+            heapSwap(heap, parent_item, item)
+        else:
+            break
+        parent = (item.index-1)//2
+
+
+cdef Grid_t* heapRemove(Heap_t* heap):
+    cdef Grid_t* first_item = heap.items[0]
+    heap.length -= 1
+    heap.items[0] = heap.items[heap.length]
+    heap.items[0].index = 0
+    heapSortDown(heap, heap.items[0])
+    return first_item
+
+
+cdef void heapSortDown(Heap_t* heap, Grid_t* item):
+    cdef int child_left, child_right
+    cdef int swap_index
+    while True:
+        child_left = item.index * 2 + 1
+        child_right = item.index * 2 + 2
+        if child_left < heap.length:
+            swap_index = child_left
+            if child_right < heap.length:
+                if heap.items[child_left].f > heap.items[child_right].f:
+                    swap_index = child_right
+            if heap.items[swap_index].f < item.f:
+                heapSwap(heap, item, heap.items[swap_index])
+            else:
+                return
+        else:
+            return
+
+
+cdef void heapSwap(Heap_t* heap, Grid_t* item_a, Grid_t* item_b):
+    heap.items[item_a.index] = item_b
+    heap.items[item_b.index] = item_a
+    item_a.index, item_b.index = item_b.index, item_a.index
+
+
+cdef bint heapContains(Heap_t* heap, Grid_t* item):
+    return eqGrid(heap.items[item.index], item)
+
+
 cdef class Heap:
     cdef public np.ndarray items
     cdef public int length, size
@@ -102,7 +274,7 @@ cdef class Grid:
 
         self.index = 0
 
-    cpdef eq(self, Grid other):
+    cpdef bint eq(self, Grid other):
         return self.x == other.x and self.y == other.y
 
     def to_str(self):
@@ -110,14 +282,14 @@ cdef class Grid:
 
 
 class Board(np.ndarray):
-    def __new__(cls, width, height):
+    def __new__(cls, int width, int height):
         new_board = super(Board, cls).__new__(cls, (height, width), dtype=object)
         for j in range(new_board.shape[0]):
             for i in range(new_board.shape[1]):
                 new_board[j, i] = Grid(i, j, False, 0)
         return new_board
 
-    def in_bounds(self, y, x):
+    def in_bounds(self, int y, int x):
         return 0 <= y < self.shape[0] and 0 <= x < self.shape[1]
 
 
@@ -177,6 +349,8 @@ cdef class AStar:
         return False
 
     cpdef bint calculate_path(self):
+        cdef bint path_found
+
         self.open_set.heappush(self.start_pos)
         while self.open_set.length:
             self.current_pos = self.open_set.rem_fir()
@@ -186,6 +360,8 @@ cdef class AStar:
         return False
 
     cpdef set recreate_path(self):
+        cdef set project_path
+
         project_path = set()
         pos = self.current_pos
         while pos is not None:
@@ -261,5 +437,34 @@ def main() -> int:
     return 0
 
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
+
+def testheap():
+    cdef int i
+    cdef double t = 10.0
+    cdef int N = 4
+    cdef Grid_t[4] items
+    for i in range(N):
+        items[i] = initGrid()
+        items[i].x = i
+        items[i].f = t
+        t -= 3.0
+        printGrid(&items[i])
+    
+    cdef Grid_t* tg
+    cdef Heap_t test = initHeap(N)
+    heappush(&test, &items[0])
+    printHeap(&test)
+    heappush(&test, &items[2])
+    printHeap(&test)
+    heappush(&test, &items[1])
+    printHeap(&test)
+    heappush(&test, &items[3])
+    printHeap(&test)
+    printf("\n")
+    tg = heapRemove(&test)
+    printGrid(tg)
+    tg = heapRemove(&test)
+    printGrid(tg)
+    freeHeap(&test)
