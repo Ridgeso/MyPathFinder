@@ -2,7 +2,7 @@ from time import sleep, perf_counter
 from random import randint
 
 from libc.stdio cimport printf
-from libc.stdlib cimport malloc, free
+from libc.stdlib cimport malloc, calloc, free
 cimport numpy as np
 
 
@@ -15,6 +15,7 @@ cdef struct Grid_t:
     int x, y
     bint wall
     bint been_traveled
+    bint is_path
     double g, h, f
     int index
     Grid_t* previous
@@ -32,11 +33,21 @@ cdef struct Heap_t:
     Grid_t** items
 
 
+cdef struct Astar_t:
+    Board_t board
+    Heap_t open_set
+    Grid_t* start_pos
+    Grid_t* end_pos
+    Grid_t* current_pos
+
+
 cdef inline Grid_t initGrid():
     cdef Grid_t grid
     grid.x = 0
     grid.y = 0
     grid.wall = False
+    grid.been_traveled = False
+    grid.is_path = False
     grid.g = 0.0
     grid.h = 0.0
     grid.f = 0.0
@@ -46,7 +57,7 @@ cdef inline Grid_t initGrid():
 
 
 cdef void printGrid(Grid_t* g):
-    printf("%10d %10d %10d %10.4lf %10.4lf %10.4lf %10d %p\n", g.x, g.y, g.wall, g.g, g.h, g.f, g.index, g.previous)
+    printf("%10d %10d %10d %10.4lf %10d %p\n", g.x, g.y, g.wall, g.f, g.index, g.previous)
 
 
 cdef bint eqGrid(Grid_t* a, Grid_t* b):
@@ -77,23 +88,23 @@ cdef void freeBoard(Board_t* board):
     free(<void*>board.board)
 
 
-cdef inline bint in_bounds(Board_t* board, y, x):
+cdef inline bint in_bounds(Board_t* board, int y, int x):
     return 0 <= y < board.y and 0 <= x < board.x
 
 
-cdef inline Grid_t* getGrid(Board_t* board, y, x):
+cdef inline Grid_t* getGrid(Board_t* board, int y, int x):
     return &board.board[y][x]
 
 
-cdef Grid_t** getNeighbors(Board_t* board, y, x):
+cdef Grid_t** getNeighbors(Board_t* board, Grid_t* grid):
     cdef int neighborCount = 0
     cdef int i, j
     for j in range(-1, 2):
         for i in range(-1, 2):
             if i == 0 == j:
                 continue
-            if in_bounds(board, y + j, x + i):
-                board.neighbors[neighborCount] = getGrid(board, y + j, x + i)
+            if in_bounds(board, grid.y + j, grid.x + i):
+                board.neighbors[neighborCount] = getGrid(board, grid.y + j, grid.x + i)
                 neighborCount += 1
     if neighborCount < 8:
         board.neighbors[neighborCount] = NULL
@@ -107,8 +118,6 @@ cdef Heap_t initHeap(int size):
     heap.length = 0
     heap.items = <Grid_t**>malloc(size * sizeof(Grid_t*))
     
-    for i in range(size):
-        heap.items[i] = <Grid_t*>malloc(sizeof(Grid_t))
     return heap
 
 
@@ -116,17 +125,15 @@ cdef void printHeap(Heap_t* heap):
     cdef int i
     printf("Size: %d | Length: %d\n", heap.size, heap.length)
     for i in range(heap.size):
+        printf("%3d |", i)
         printGrid(heap.items[i])
 
 
 cdef void freeHeap(Heap_t* heap):
-    cdef int i
-    for i in range(heap.size):
-        free(<void*>heap.items[i])
     free(<void*>heap.items)
 
 
-cdef void heappush(Heap_t* heap, Grid_t* item):
+cdef void heapPush(Heap_t* heap, Grid_t* item):
     item.index = heap.length
     heap.items[heap.length] = item
     heapSortUp(heap, item)
@@ -181,6 +188,99 @@ cdef void heapSwap(Heap_t* heap, Grid_t* item_a, Grid_t* item_b):
 
 cdef bint heapContains(Heap_t* heap, Grid_t* item):
     return eqGrid(heap.items[item.index], item)
+
+
+cdef Astar_t initAstar(int y, int x):
+    cdef Astar_t astar
+    astar.board = initBoard(y, x)
+    astar.open_set = initHeap(y * x)
+    astar.start_pos = NULL
+    astar.end_pos = NULL
+    astar.current_pos = NULL
+    return astar
+
+
+cdef void freeAstar(Astar_t* astar):
+    freeBoard(&astar.board)
+    freeHeap(&astar.open_set)
+
+
+cdef double getHeuristic(Grid_t* next_pos, Grid_t* pos):
+    cdef double x, y
+    x = fabs(next_pos.x - pos.x)
+    y = fabs(next_pos.y - pos.y)
+    return x + y - 0.585786 * min(x, y)
+
+
+cdef bint stepAstar(Astar_t* astar):
+    if eqGrid(astar.current_pos, astar.end_pos):
+        return True
+    
+    astar.current_pos.been_traveled = True
+
+    cdef double temp_g
+    cdef bint contain
+    cdef int i
+    cdef Grid_t** neighbors = getNeighbors(&astar.board, astar.current_pos)
+    for i in range(8):
+        if neighbors[i] == NULL:
+            break
+        if neighbors[i].wall or neighbors[i].been_traveled:
+            continue
+        
+        temp_g = astar.current_pos.g + getHeuristic(neighbors[i], astar.current_pos)
+        contain = not heapContains(&astar.open_set, neighbors[i])
+
+        if contain or temp_g < neighbors[i].g:
+            neighbors[i].g = temp_g
+            neighbors[i].h = getHeuristic(neighbors[i], astar.end_pos)
+            neighbors[i].f = neighbors[i].g + neighbors[i].h
+            neighbors[i].previous = astar.current_pos
+
+            if contain:
+                heapPush(&astar.open_set, neighbors[i])
+    return False
+
+
+cdef bint findPath(Astar_t* astar):
+    cdef bint path_found
+
+    heapPush(&astar.open_set, astar.start_pos)
+    while astar.open_set.length:
+
+        astar.current_pos = heapRemove(&astar.open_set)
+
+        path_found = stepAstar(astar)
+        
+        if path_found:
+            return True
+    
+
+    return False
+
+
+cdef void recreatePath(Astar_t* astar):
+    cdef Grid_t* last_pos = astar.current_pos
+    while last_pos != NULL:
+        last_pos.is_path = True
+        last_pos = last_pos.previous
+
+
+cdef void printAstar(Astar_t* astar):
+    cdef int j, i
+    cdef Grid_t* g
+    for j in range(astar.board.y):
+        for i in range(astar.board.x):
+            g = getGrid(&astar.board, j, i)
+            if g.is_path:
+                printf('0 ')
+            elif g.wall:
+                printf('\\ ')
+            elif g.been_traveled:
+                printf('. ')
+            else:
+                printf('  ')
+        printf("\n")
 
 
 cdef class Heap:
@@ -370,7 +470,7 @@ cdef class AStar:
         return project_path
 
 
-def main() -> int:
+def main():
     from os import system
     from time import perf_counter, sleep
     import random
@@ -390,20 +490,20 @@ def main() -> int:
     astar.end_pos = game_board[-1, -1]
 
     path = set()
-    def write() -> None:
+    def write():
         for level in game_board:
             for g in level:
                 if g in path:
-                    printf('0 ')
+                    printf('0')
                 elif g.wall:
-                    printf('\\ ')
+                    printf('\\')
                 elif g.been_traveled:
                     printf('.')
                 else:
                     printf(' ')
             printf("\n")
 
-    def run() -> str:
+    def run():
         nonlocal path
         astar.open_set.heappush(astar.start_pos)
         while astar.open_set.length:
@@ -441,30 +541,26 @@ def main() -> int:
 #     main()
 
 def testheap():
-    cdef int i
-    cdef double t = 10.0
-    cdef int N = 4
-    cdef Grid_t[4] items
-    for i in range(N):
-        items[i] = initGrid()
-        items[i].x = i
-        items[i].f = t
-        t -= 3.0
-        printGrid(&items[i])
+    cdef bint path_found
+
+    printf("Initialization\n")
+    cdef Astar_t test = initAstar(10, 10)
+    test.start_pos = getGrid(&test.board, 0, 0)
+    test.end_pos = getGrid(&test.board, 9, 9)
+
+    cdef int j, i
+    for j in range(test.board.y):
+        for i in range(test.board.x):
+            test.board.board[j][i].wall = not randint(0, 3)
+
+    printf("Counting\n")
+    path_found = findPath(&test)
+    if path_found:
+        printf("Backtracking\n")
+        recreatePath(&test)
+    printf("Printing\n")
+    printAstar(&test)
+    printf("Freeing\n")
+    freeAstar(&test)
+    printf("Done\n")
     
-    cdef Grid_t* tg
-    cdef Heap_t test = initHeap(N)
-    heappush(&test, &items[0])
-    printHeap(&test)
-    heappush(&test, &items[2])
-    printHeap(&test)
-    heappush(&test, &items[1])
-    printHeap(&test)
-    heappush(&test, &items[3])
-    printHeap(&test)
-    printf("\n")
-    tg = heapRemove(&test)
-    printGrid(tg)
-    tg = heapRemove(&test)
-    printGrid(tg)
-    freeHeap(&test)
