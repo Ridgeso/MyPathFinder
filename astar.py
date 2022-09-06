@@ -5,6 +5,7 @@ from typing import (
 )
 import math
 from abc import ABC, abstractmethod
+from enum import Enum, auto
 
 import numpy as np
 from time import sleep, perf_counter
@@ -136,38 +137,30 @@ class Grid(IHeapItem):
         self.index = value
 
 
-class Board(np.ndarray):
-    def __new__(cls, width: int, height: int) -> 'Board':
-        new_board = super(Board, cls).__new__(cls, (height, width), dtype=object)
-        for j in range(new_board.shape[0]):
-            for i in range(new_board.shape[1]):
-                new_board[j, i] = Grid(i, j, False, 0)
-        return new_board
-
-    def in_bounds(self, y: int, x: int) -> bool:
-        return 0 <= y < self.shape[0] and 0 <= x < self.shape[1]
-
-    def get_neighbors(self, grid: Grid) -> Iterator[Grid]:
-        for j in range(-1, 2):
-            for i in range(-1, 2):
-                if i == 0 == j:
-                    continue
-                if self.in_bounds(grid.y + j, grid.x + i):
-                    yield self[grid.y + j, grid.x + i]
+    
+class InsertionState(Enum):
+    INSERTED = auto()
+    DELETED = auto()
+    SKIPED = auto()
 
 
-class AStar:
-    def __init__(self, board: Board) -> None:
-        self.board = board
+class AStar(np.ndarray):
+    def __new__(cls, width: int, height: int) -> 'AStar':
+        self =  super(AStar, cls).__new__(cls, (height, width), dtype=object)
+
+        for j in range(self.shape[0]):
+            for i in range(self.shape[1]):
+                self[j, i] = Grid(i, j, False, 0)
 
         self.open_set = Heap(
-            self.board.shape[0] * self.board.shape[1],
+            self.shape[0] * self.shape[1],
             (Grid, {"x": 0, "y": 0, "wall": True, "f_cost": math.inf})
         )
-
         self.start_pos = None
         self.end_pos = None
         self.current_pos = None
+
+        return self
 
     def step(self) -> bool:
         if self.current_pos == self.end_pos:
@@ -175,7 +168,7 @@ class AStar:
 
         self.current_pos.been_traveled = True
         
-        for neighbour in self.board.get_neighbors(self.current_pos):
+        for neighbour in self.get_neighbors(self.current_pos):
             if neighbour.wall or neighbour.been_traveled:
                 continue
 
@@ -216,6 +209,48 @@ class AStar:
             project_path.add(pos)
             pos = pos.previous
         return project_path
+    
+    def in_bounds(self, y: int, x: int) -> bool:
+        return 0 <= y < self.shape[0] and 0 <= x < self.shape[1]
+
+    def get_neighbors(self, grid: Grid) -> Iterator[Grid]:
+        for j in range(-1, 2):
+            for i in range(-1, 2):
+                if i == 0 == j:
+                    continue
+                if self.in_bounds(grid.y + j, grid.x + i):
+                    yield self[grid.y + j, grid.x + i]
+
+    def set_start(self, grid: Grid) -> InsertionState:
+        if self.start_pos is None:  # Set
+            self.start_pos = grid
+            return InsertionState.INSERTED
+        if self.start_pos == grid:  # Delete
+            self.start_pos = None
+            return InsertionState.DELETED
+        return InsertionState.SKIPED
+
+    def set_end(self, grid: Grid) -> InsertionState:
+        if self.end_pos is None:  # Set
+            self.end_pos = grid
+            return InsertionState.INSERTED
+        if self.end_pos == grid:  # Delete
+            self.end_pos = None
+            return InsertionState.DELETED
+        return InsertionState.SKIPED
+    
+    def set_wall(self, grid: Grid, state: bool) -> InsertionState:
+        if grid == self.start_pos:
+            return InsertionState.SKIPED
+        if grid == self.end_pos:
+            return InsertionState.SKIPED
+        
+        grid.wall = state
+
+        if state:
+            return InsertionState.INSERTED
+        else:
+            return InsertionState.DELETED
 
 
 def main() -> int:
@@ -226,18 +261,17 @@ def main() -> int:
     delay = 0.5
     testit = True
 
-    game_board = Board(10, 10)
-    for i in game_board:
+    astar = AStar(10, 10)
+    for i in astar:
         for j in i:
             j.wall = not random.randint(0, 4)
-    astar = AStar(game_board)
-    astar.start_pos = game_board[0, 0]
-    astar.end_pos = game_board[-1, -1]
+    astar.start_pos = astar[0, 0]
+    astar.end_pos = astar[-1, -1]
 
     path = set()
 
     def write() -> None:
-        for level in game_board:
+        for level in astar:
             for g in level:
                 if g in path:
                     print('0', end=" ")
@@ -280,7 +314,6 @@ def main() -> int:
         if not testit:
             print(end * 1000)
             write()
-
 
     return 0
 

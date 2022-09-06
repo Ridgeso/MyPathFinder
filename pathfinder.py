@@ -24,8 +24,7 @@ class App:
         self.grid_width = self.win_width // self.board_size
         self.grid_height = self.win_height // self.board_size
 
-        self.board = Board(self.board_size, self.board_size)
-        self.astar = AStar(self.board)
+        self.astar = AStar(self.board_size, self.board_size)
 
         self.colors = {"path": "green",
                        "been": "red",
@@ -86,46 +85,46 @@ class App:
     def reset(self) -> None:
         if self.run_btn["text"] == "Start":
             # Reinitialization
-            self.board = Board(self.board_size, self.board_size)
-            self.astar = AStar(self.board)
+            self.astar = AStar(self.board_size, self.board_size)
 
             self.fill_app()
             self.finished.config(text="Set the Start and End point to start")
 
     def set_grid(self, y: int, x: int, grid_type: str) -> None:
-        if self.board.in_bounds(y, x):
+        if self.astar.in_bounds(y, x):
+            
             if grid_type == "start":
-                if self.astar.start_pos is None:  # Set
-                    self.astar.start_pos = self.board[y, x]
+                state = self.astar.set_start(self.astar[y, x])
+                if state == InsertionState.INSERTED:
                     color = self.colors["start"]
-                else:  # Delete
-                    if self.board[y, x] == self.astar.start_pos:
-                        self.astar.start_pos = None
-                        color = self.colors["none"]
-                    else:
-                        return
+                elif state == InsertionState.DELETED:
+                    color = self.colors["none"]                
+                else:
+                    return
+
             elif grid_type == "end":  # Set
-                if self.astar.end_pos is None:
-                    self.astar.end_pos = self.board[y, x]
+                state = self.astar.set_end(self.astar[y, x])
+                if state == InsertionState.INSERTED:
                     color = self.colors["end"]
-                else:  # Delete
-                    if self.board[y, x] == self.astar.end_pos:
-                        self.astar.end_pos = None
-                        color = self.colors["none"]
-                    else:
-                        return
+                elif state == InsertionState.DELETED:
+                    color = self.colors["none"]                
+                else:
+                    return
+
             elif grid_type == "wallT":  # Set Wall
-                grid = self.board[y, x]
-                if grid == self.astar.start_pos or grid == self.astar.end_pos:
+                insertion_state = self.astar.set_wall(self.astar[y, x], True)
+                if insertion_state == InsertionState.INSERTED:
+                    color = self.colors["wall"]
+                else:
                     return
-                color = self.colors["wall"]
-                grid.wall = True
+
             elif grid_type == "wallF":  # Delete Wall
-                grid = self.board[y, x]
-                if grid == self.astar.start_pos or grid == self.astar.end_pos:
+                insertion_state = self.astar.set_wall(self.astar[y, x], False)
+                if insertion_state == InsertionState.DELETED:
+                    color = self.colors["none"]
+                else:
                     return
-                color = self.colors["none"]
-                grid.wall = False
+
             else:
                 return
 
@@ -187,7 +186,7 @@ class App:
 
             if self.speed.get():
                 self.draw_path(self.astar.current_pos, "been")
-                for neighbour in self.board.get_neighbors(self.astar.current_pos):
+                for neighbour in self.astar.get_neighbors(self.astar.current_pos):
                     if neighbour.wall or neighbour not in self.astar.open_set:
                         continue
                     self.draw_path(neighbour, "neighbor")

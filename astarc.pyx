@@ -12,7 +12,7 @@ cdef extern from "math.h":
 
 
 cdef struct Grid_t:
-    int x, y
+    int y, x
     bint wall
     bint been_traveled
     bint is_path
@@ -22,7 +22,7 @@ cdef struct Grid_t:
 
 
 cdef struct Board_t:
-    int y, x
+    int height, width
     Grid_t** board
     Grid_t* neighbors[8]
 
@@ -41,10 +41,11 @@ cdef struct Astar_t:
     Grid_t* current_pos
 
 
-cdef inline Grid_t initGrid():
+##### GRID #####
+cdef Grid_t initGrid(int y, int x):
     cdef Grid_t grid
-    grid.x = 0
-    grid.y = 0
+    grid.y = y
+    grid.x = x
     grid.wall = False
     grid.been_traveled = False
     grid.is_path = False
@@ -60,41 +61,36 @@ cdef void printGrid(Grid_t* g):
     printf("%10d %10d %10d %10.4lf %10d %p\n", g.x, g.y, g.wall, g.f, g.index, g.previous)
 
 
-cdef bint eqGrid(Grid_t* a, Grid_t* b):
+cdef inline bint eqGrid(Grid_t* a, Grid_t* b):
     return a.x == b.x and a.y == b.y
 
 
-cdef Board_t initBoard(int y, int x):
+##### BOARD #####
+cdef Board_t initBoard(int height, int width):
     cdef Board_t board
-    board.y = y
-    board.x = x
-    board.board = <Grid_t**>malloc(y * sizeof(Grid_t*))
+    board.height = height
+    board.width = width
+    board.board = <Grid_t**>malloc(height * sizeof(Grid_t*))
 
     cdef int j, i
-    for j in range(y):
-        board.board[j] = <Grid_t*>malloc(x * sizeof(Grid_t))
-        for i in range(x):
-            board.board[j][i] = initGrid()
-            board.board[j][i].y = j
-            board.board[j][i].x = i
+    for j in range(height):
+        board.board[j] = <Grid_t*>malloc(width * sizeof(Grid_t))
+        for i in range(width):
+            board.board[j][i] = initGrid(j, i)
 
     return board
 
-
 cdef void freeBoard(Board_t* board):
     cdef int i
-    for i in range(board.y):
+    for i in range(board.height):
         free(<void*>board.board[i])
     free(<void*>board.board)
 
-
-cdef inline bint in_bounds(Board_t* board, int y, int x):
-    return 0 <= y < board.y and 0 <= x < board.x
-
+cdef inline bint inBounds(Board_t* board, int y, int x):
+    return 0 <= y < board.height and 0 <= x < board.width
 
 cdef inline Grid_t* getGrid(Board_t* board, int y, int x):
     return &board.board[y][x]
-
 
 cdef Grid_t** getNeighbors(Board_t* board, Grid_t* grid):
     cdef int neighborCount = 0
@@ -103,7 +99,7 @@ cdef Grid_t** getNeighbors(Board_t* board, Grid_t* grid):
         for i in range(-1, 2):
             if i == 0 == j:
                 continue
-            if in_bounds(board, grid.y + j, grid.x + i):
+            if inBounds(board, grid.y + j, grid.x + i):
                 board.neighbors[neighborCount] = getGrid(board, grid.y + j, grid.x + i)
                 neighborCount += 1
     if neighborCount < 8:
@@ -111,6 +107,7 @@ cdef Grid_t** getNeighbors(Board_t* board, Grid_t* grid):
     return board.neighbors
 
 
+##### Heap #####
 cdef Heap_t initHeap(int size):
     cdef int i
     cdef Heap_t heap
@@ -190,10 +187,10 @@ cdef bint heapContains(Heap_t* heap, Grid_t* item):
     return eqGrid(heap.items[item.index], item)
 
 
-cdef Astar_t initAstar(int y, int x):
+cdef Astar_t initAstar(int height, int width):
     cdef Astar_t astar
-    astar.board = initBoard(y, x)
-    astar.open_set = initHeap(y * x)
+    astar.board = initBoard(height, width)
+    astar.open_set = initHeap(height * width)
     astar.start_pos = NULL
     astar.end_pos = NULL
     astar.current_pos = NULL
@@ -269,8 +266,8 @@ cdef void recreatePath(Astar_t* astar):
 cdef void printAstar(Astar_t* astar):
     cdef int j, i
     cdef Grid_t* g
-    for j in range(astar.board.y):
-        for i in range(astar.board.x):
+    for j in range(astar.board.height):
+        for i in range(astar.board.width):
             g = getGrid(&astar.board, j, i)
             if g.is_path:
                 printf('0 ')
@@ -281,6 +278,46 @@ cdef void printAstar(Astar_t* astar):
             else:
                 printf('  ')
         printf("\n")
+
+
+cdef class NewGrid:
+    cdef public int x, y
+    cdef Grid_t body
+
+    def __cinit__(self, int y, int x):
+        self.y = y
+        self.x = x
+        
+        self.body = initGrid(y, x)
+
+    cpdef void print_grid(self):
+        printGrid(&self.body)
+    
+    cpdef bint _equal(self, NewGrid other):
+        return eqGrid(&self.body, &other.body)
+
+    def __eq__(self, NewGrid other):
+        return self._equal(other)
+
+
+cdef class NewAstar:
+    cdef int width, height
+    cdef Astar_t astar
+
+    def __cinit__(self, int width, int height):
+        self.height = height
+        self.width = width
+        
+        self.astar = initAstar(height, width)
+
+    def __dealloc__(self):
+        freeAstar(&self.astar)
+
+    cpdef void print_board(self):
+        printAstar(&self.astar)
+    
+    cpdef bint in_bounds(int y, int x):
+        return inBounds(&self.astar.board, y, x)
 
 
 cdef class Heap:
@@ -537,30 +574,33 @@ def main():
     return 0
 
 
-# if __name__ == '__main__':
-#     main()
+if __name__ == '__main__':
+    main()
 
 def testheap():
-    cdef bint path_found
+    cdef NewAstar new_astar
+    new_astar = NewAstar(3, 3)
+    new_astar.print_board()
+    # cdef bint path_found
 
-    printf("Initialization\n")
-    cdef Astar_t test = initAstar(10, 10)
-    test.start_pos = getGrid(&test.board, 0, 0)
-    test.end_pos = getGrid(&test.board, 9, 9)
+    # printf("Initialization\n")
+    # cdef Astar_t test = initAstar(10, 10)
+    # test.start_pos = getGrid(&test.board, 0, 0)
+    # test.end_pos = getGrid(&test.board, 9, 9)
 
-    cdef int j, i
-    for j in range(test.board.y):
-        for i in range(test.board.x):
-            test.board.board[j][i].wall = not randint(0, 3)
+    # cdef int j, i
+    # for j in range(test.board.height):
+    #     for i in range(test.board.width):
+    #         test.board.board[j][i].wall = not randint(0, 3)
 
-    printf("Counting\n")
-    path_found = findPath(&test)
-    if path_found:
-        printf("Backtracking\n")
-        recreatePath(&test)
-    printf("Printing\n")
-    printAstar(&test)
-    printf("Freeing\n")
-    freeAstar(&test)
-    printf("Done\n")
+    # printf("Counting\n")
+    # path_found = findPath(&test)
+    # if path_found:
+    #     printf("Backtracking\n")
+    #     recreatePath(&test)
+    # printf("Printing\n")
+    # printAstar(&test)
+    # printf("Freeing\n")
+    # freeAstar(&test)
+    # printf("Done\n")
     
