@@ -187,6 +187,7 @@ cdef bint heapContains(Heap_t* heap, Grid_t* item):
     return eqGrid(heap.items[item.index], item)
 
 
+##### Astar #####
 cdef Astar_t initAstar(int height, int width):
     cdef Astar_t astar
     astar.board = initBoard(height, width)
@@ -282,22 +283,26 @@ cdef void printAstar(Astar_t* astar):
 
 cdef class NewGrid:
     cdef public int x, y
-    cdef Grid_t body
+    cdef public bint wall
 
-    def __cinit__(self, int y, int x):
+    def __cinit__(self, int y, int x, bint wall):
         self.y = y
         self.x = x
-        
-        self.body = initGrid(y, x)
+        self.wall = wall
 
-    cpdef void print_grid(self):
-        printGrid(&self.body)
+    def __hash__(self):
+        return hash((self.x, self.y))
     
-    cpdef bint _equal(self, NewGrid other):
-        return eqGrid(&self.body, &other.body)
+    def __str__(self):
+        return f"Grid({self.y} {self.x})"
+    # cpdef void print_grid(self):
+    #     printGrid(&self.body)
 
-    def __eq__(self, NewGrid other):
-        return self._equal(other)
+    # def __eq__(self, NewGrid other):
+    #     return eqGrid(&self.body, &other.body)
+
+
+ctypedef int InsertionState
 
 
 cdef class NewAstar:
@@ -316,8 +321,109 @@ cdef class NewAstar:
     cpdef void print_board(self):
         printAstar(&self.astar)
     
-    cpdef bint in_bounds(int y, int x):
+    cpdef bint in_bounds(self, int y, int x):
         return inBounds(&self.astar.board, y, x)
+    
+    INSERTED = 0x00
+    DELETED  = 0x01
+    SKIPED   = 0x02
+
+    cpdef InsertionState set_start(self, int y, int x):
+        cdef Grid_t* grid = getGrid(&self.astar.board, y, x)
+        
+        if self.astar.start_pos == NULL:  # Set
+            self.astar.start_pos = grid
+            return self.INSERTED
+        if eqGrid(self.astar.start_pos, grid):  # Delete
+            self.astar.start_pos = NULL
+            return self.DELETED
+        return self.SKIPED
+
+    cpdef InsertionState set_end(self, int y, int x):
+        cdef Grid_t* grid = getGrid(&self.astar.board, y, x)
+        
+        if self.astar.end_pos == NULL:  # Set
+            self.astar.end_pos = grid
+            return self.INSERTED
+        if eqGrid(self.astar.end_pos, grid):  # Delete
+            self.astar.end_pos = NULL
+            return self.DELETED
+        return self.SKIPED
+    
+    cpdef InsertionState set_wall(self, int y, int x, bint state):
+        cdef Grid_t* grid = getGrid(&self.astar.board, y, x)
+        
+        if self.astar.start_pos != NULL and eqGrid(grid, self.astar.start_pos):
+            return self.SKIPED
+        if self.astar.end_pos != NULL and eqGrid(grid, self.astar.end_pos):
+            return self.SKIPED
+        
+        grid.wall = state
+
+        if state:
+            return self.INSERTED
+        else:
+            return self.DELETED
+    
+    @property
+    def start_pos(self):
+        return NewGrid(self.astar.start_pos.y, self.astar.start_pos.x, self.astar.start_pos.wall)
+
+    @property
+    def end_pos(self):
+        return NewGrid(self.astar.end_pos.y, self.astar.end_pos.x, self.astar.end_pos.wall)
+
+    @property
+    def current_pos(self):
+        return NewGrid(self.astar.current_pos.y, self.astar.current_pos.x, self.astar.current_pos.wall)
+
+    cpdef set recreate_path(self):    
+        cdef set path = set()
+        cdef NewGrid add_path
+
+        cdef Grid_t* p = self.astar.current_pos
+
+        while p != NULL:
+            add_path = NewGrid(p.y, p.x, p.wall)
+            path.add(add_path)
+            p = p.previous
+        return path
+    
+    cpdef void init_finding(self):
+        heapPush(&self.astar.open_set, self.astar.start_pos)
+
+    cpdef void update_current_pos(self):
+        self.astar.current_pos = heapRemove(&self.astar.open_set)
+    
+    cpdef bint is_calculating(self):
+        return self.astar.open_set.length > 0
+    
+    cpdef bint contains(self, NewGrid grid):
+        cdef Grid_t* g = getGrid(&self.astar.board, grid.y, grid.x)
+        return heapContains(&self.astar.open_set, g)
+
+    cpdef bint step(self):
+        return stepAstar(&self.astar)
+
+    cpdef bint calculate_path(self):
+        return findPath(&self.astar)
+    
+    cpdef list get_neighbors(self, NewGrid pos):
+        cdef list py_neighbors = []
+        
+        cdef Grid_t neighbor
+        neighbor.y = pos.y
+        neighbor.x = pos.x
+
+        cdef Grid_t** neighbors = getNeighbors(&self.astar.board, &neighbor)
+        
+        cdef int i
+        for i in range(8):
+            if neighbors[i] == NULL:
+                break
+            py_neighbors.append(NewGrid(neighbors[i].y, neighbors[i].x, neighbors[i].wall))
+        
+        return py_neighbors
 
 
 cdef class Heap:
@@ -579,8 +685,33 @@ if __name__ == '__main__':
 
 def testheap():
     cdef NewAstar new_astar
-    new_astar = NewAstar(3, 3)
+    new_astar = NewAstar(4, 4)
+
+    printf("%d\n", new_astar.set_start(0, 0))
+    printf("%d\n", new_astar.set_end(3, 3))
+    printf("%d\n", new_astar.set_wall(2, 2, True))
+
     new_astar.print_board()
+
+    print(new_astar.start_pos)
+    print(new_astar.end_pos)
+    new_astar.astar.current_pos = new_astar.astar.start_pos
+    print(new_astar.current_pos)
+    printf("\n")
+
+    new_astar.calculate_path()
+    recreatePath(&new_astar.astar)
+    new_astar.print_board()
+
+    printf("\n")
+    path = new_astar.recreate_path()
+    for p in path:
+        print(p)
+
+    printf("\nPy Neighbors\n")
+    py_neighbors = new_astar.get_neighbors(NewGrid(0, 0))
+    for py_neighbor in py_neighbors:
+        print(py_neighbor)
     # cdef bint path_found
 
     # printf("Initialization\n")

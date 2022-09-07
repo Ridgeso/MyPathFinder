@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Dict
 import tkinter as tk
 from tkinter import Button, Label, Scale, Tk, Canvas
 from tkinter.constants import HORIZONTAL
@@ -16,6 +16,24 @@ else:
 
 
 class App:
+    win_width: int
+    win_height: int
+    shift: int
+    board_size: int
+    grid_width: int
+    grid_height: int
+
+    astar: NewAstar
+
+    colors: Dict[str, str]
+
+    root: Tk
+    canvas: Canvas
+    run_btn: Button
+    reset_btn: Button
+    speed: Scale
+    finished: Label
+
     def __init__(self, win_width: int, win_height: int) -> None:
         self.win_width = win_width
         self.win_height = win_height
@@ -24,7 +42,7 @@ class App:
         self.grid_width = self.win_width // self.board_size
         self.grid_height = self.win_height // self.board_size
 
-        self.astar = AStar(self.board_size, self.board_size)
+        self.astar = NewAstar(self.board_size, self.board_size)
 
         self.colors = {"path": "green",
                        "been": "red",
@@ -85,42 +103,50 @@ class App:
     def reset(self) -> None:
         if self.run_btn["text"] == "Start":
             # Reinitialization
-            self.astar = AStar(self.board_size, self.board_size)
+            del self.astar
+            self.astar = NewAstar(self.board_size, self.board_size)
 
             self.fill_app()
             self.finished.config(text="Set the Start and End point to start")
+
+    def draw_rect(self, y: int, x: int, color: str):
+        self.canvas.create_rectangle(
+            self.shift + x, self.shift + y,
+            self.shift + x + self.grid_width, self.shift + y + self.grid_height,
+            fill=color
+        )
 
     def set_grid(self, y: int, x: int, grid_type: str) -> None:
         if self.astar.in_bounds(y, x):
             
             if grid_type == "start":
-                state = self.astar.set_start(self.astar[y, x])
-                if state == InsertionState.INSERTED:
+                state = self.astar.set_start(y, x)
+                if state == self.astar.INSERTED:
                     color = self.colors["start"]
-                elif state == InsertionState.DELETED:
+                elif state == self.astar.DELETED:
                     color = self.colors["none"]                
                 else:
                     return
 
             elif grid_type == "end":  # Set
-                state = self.astar.set_end(self.astar[y, x])
-                if state == InsertionState.INSERTED:
+                state = self.astar.set_end(y, x)
+                if state == self.astar.INSERTED:
                     color = self.colors["end"]
-                elif state == InsertionState.DELETED:
+                elif state == self.astar.DELETED:
                     color = self.colors["none"]                
                 else:
                     return
 
             elif grid_type == "wallT":  # Set Wall
-                insertion_state = self.astar.set_wall(self.astar[y, x], True)
-                if insertion_state == InsertionState.INSERTED:
+                insertion_state = self.astar.set_wall(y, x, True)
+                if insertion_state == self.astar.INSERTED:
                     color = self.colors["wall"]
                 else:
                     return
 
             elif grid_type == "wallF":  # Delete Wall
-                insertion_state = self.astar.set_wall(self.astar[y, x], False)
-                if insertion_state == InsertionState.DELETED:
+                insertion_state = self.astar.set_wall(y, x, False)
+                if insertion_state == self.astar.DELETED:
                     color = self.colors["none"]
                 else:
                     return
@@ -130,11 +156,7 @@ class App:
 
             y = y * self.grid_height
             x = x * self.grid_width
-            self.canvas.create_rectangle(
-                self.shift + x, self.shift + y,
-                self.shift + x + self.grid_width, self.shift + y + self.grid_height,
-                fill=color
-            )
+            self.draw_rect(y, x, color)
 
     def get_coordinates(self, y: int, x: int) -> Tuple[int, int]:
         coord_y = (y - self.shift) // self.grid_height
@@ -157,12 +179,13 @@ class App:
         y, x = self.get_coordinates(event.y, event.x)
         self.set_grid(y, x, "wallF")
 
-    def draw_path(self, pos: Grid, mode: str) -> None:
+    def draw_path(self, pos: NewGrid, mode: str) -> None:
         if mode == "path":
             found_path = self.astar.recreate_path()
             for p in found_path:
                 y = p.y * self.grid_height
                 x = p.x * self.grid_width
+                # self.draw_rect(y, x, self.colors["path"])
                 self.canvas.create_rectangle(
                     x + self.shift, y + self.shift,
                     x + self.grid_width + self.shift, y + self.grid_height + self.shift,
@@ -170,24 +193,23 @@ class App:
                 )
             return
 
-        if pos != self.astar.start_pos:
-            color = self.colors[mode]
-            self.canvas.create_rectangle(
-                pos.x * self.grid_width + self.shift, pos.y * self.grid_height + self.shift,
-                (pos.x + 1) * self.grid_width + self.shift, (pos.y + 1) * self.grid_height + self.shift,
-                fill=color
-            )
+        color = self.colors[mode]
+        self.canvas.create_rectangle(
+            pos.x * self.grid_width + self.shift, pos.y * self.grid_height + self.shift,
+            (pos.x + 1) * self.grid_width + self.shift, (pos.y + 1) * self.grid_height + self.shift,
+            fill=color
+        )
 
     def _find_path(self) -> None:
-        if self.astar.open_set:
-            self.astar.current_pos = self.astar.open_set.rem_fir()
+        if self.astar.is_calculating():
+            self.astar.update_current_pos()
 
             state = self.astar.step()
 
             if self.speed.get():
                 self.draw_path(self.astar.current_pos, "been")
                 for neighbour in self.astar.get_neighbors(self.astar.current_pos):
-                    if neighbour.wall or neighbour not in self.astar.open_set:
+                    if neighbour.wall or not self.astar.contains(neighbour):
                         continue
                     self.draw_path(neighbour, "neighbor")
 
@@ -199,38 +221,14 @@ class App:
         else:
             self.finished.config(text="Path Not Found")
 
-    def _Cfind_path(self) -> None:
-        if self.astar.open_set:
-            self.astar.current_pos = self.astar.open_set.rem_fir()
-
-            state = self.astar.step()
-
-            if self.speed.get():
-                self.draw_path(self.astar.current_pos, "been")
-                for neighbour in get_neighbors(self.board, self.astar.current_pos):
-                    if neighbour.wall or not self.astar.open_set.contains(neighbour):
-                        continue
-                    self.draw_path(neighbour, "neighbor")
-
-            if state:
-                self.draw_path(self.astar.current_pos, "path")
-                return
-
-            self.root.after(int(self.speed.get()), self._Cfind_path)
-        else:
-            self.finished.config(text="Path Not Found")
-
     def start_finding(self) -> None:
         if self.astar.start_pos is not None and self.astar.end_pos is not None:
             self.run_btn.config(text="Stop")
 
             start_time = time.perf_counter()
 
-            self.astar.open_set.heappush(self.astar.start_pos)
-            if args.c:
-                self._Cfind_path()
-            else:
-                self._find_path()
+            self.astar.init_finding()
+            self._find_path()
 
             end_time = time.perf_counter()
 

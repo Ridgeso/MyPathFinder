@@ -5,7 +5,6 @@ from typing import (
 )
 import math
 from abc import ABC, abstractmethod
-from enum import Enum, auto
 
 import numpy as np
 from time import sleep, perf_counter
@@ -15,6 +14,10 @@ InplaceT = Tuple[Type[T], Dict]
 
 
 class Heap(Generic[T]):
+    size: int
+    items: np.ndarray
+    current_count: int
+
     #                             Allows to inplace initialize default T object
     def __init__(self, size: int, fill: Optional[InplaceT] = None) -> None:
         self.size = size
@@ -101,6 +104,18 @@ class IHeapItem(ABC, Generic[T]):
 
 
 class Grid(IHeapItem):
+    x: int
+    y: int
+    wall: bool
+    previous: Optional['Grid']
+    been_traveled: bool
+
+    f: float
+    g: float
+    h: float
+
+    index: int
+
     def __init__(self, x: int, y: int, wall: bool, f_cost: float) -> None:
         self.x = x
         self.y = y
@@ -137,14 +152,13 @@ class Grid(IHeapItem):
         self.index = value
 
 
-    
-class InsertionState(Enum):
-    INSERTED = auto()
-    DELETED = auto()
-    SKIPED = auto()
-
-
 class AStar(np.ndarray):
+    open_set: Heap
+
+    start_pos: Optional[Grid]
+    end_pos: Optional[Grid]
+    current_pos: Optional[Grid]
+
     def __new__(cls, width: int, height: int) -> 'AStar':
         self =  super(AStar, cls).__new__(cls, (height, width), dtype=object)
 
@@ -161,6 +175,18 @@ class AStar(np.ndarray):
         self.current_pos = None
 
         return self
+    
+    def init_finding(self) -> None:
+        self.open_set.heappush(self.start_pos)
+
+    def update_current_pos(self) -> None:
+        self.current_pos = self.open_set.rem_fir()
+    
+    def is_calculating(self) -> bool:
+        return self.open_set.current_count > 0
+
+    def contains(self, grid: Grid) -> bool:
+        return grid in self.open_set
 
     def step(self) -> bool:
         if self.current_pos == self.end_pos:
@@ -190,7 +216,7 @@ class AStar(np.ndarray):
     def calculate_path(self) -> bool:
         self.open_set.heappush(self.start_pos)
         while self.open_set:
-            self.current_pos = self.open_set.rem_fir()
+            self.update_current_pos()
             path_found = self.step()
             if path_found:
                 return True
@@ -221,36 +247,44 @@ class AStar(np.ndarray):
                 if self.in_bounds(grid.y + j, grid.x + i):
                     yield self[grid.y + j, grid.x + i]
 
-    def set_start(self, grid: Grid) -> InsertionState:
+    InsertionState = Type[int]
+    INSERTED = 0x00
+    DELETED  = 0x01
+    SKIPED   = 0x02
+
+    def set_start(self, y: int, x: int) -> InsertionState:
+        grid = self[y, x]
         if self.start_pos is None:  # Set
             self.start_pos = grid
-            return InsertionState.INSERTED
+            return self.INSERTED
         if self.start_pos == grid:  # Delete
             self.start_pos = None
-            return InsertionState.DELETED
-        return InsertionState.SKIPED
+            return self.DELETED
+        return self.SKIPED
 
-    def set_end(self, grid: Grid) -> InsertionState:
+    def set_end(self, y: int, x: int) -> InsertionState:
+        grid = self[y, x]
         if self.end_pos is None:  # Set
             self.end_pos = grid
-            return InsertionState.INSERTED
+            return self.INSERTED
         if self.end_pos == grid:  # Delete
             self.end_pos = None
-            return InsertionState.DELETED
-        return InsertionState.SKIPED
+            return self.DELETED
+        return self.SKIPED
     
-    def set_wall(self, grid: Grid, state: bool) -> InsertionState:
+    def set_wall(self, y: int, x: int, state: bool) -> InsertionState:
+        grid = self[y, x]
         if grid == self.start_pos:
-            return InsertionState.SKIPED
+            return self.SKIPED
         if grid == self.end_pos:
-            return InsertionState.SKIPED
+            return self.SKIPED
         
         grid.wall = state
 
         if state:
-            return InsertionState.INSERTED
+            return self.INSERTED
         else:
-            return InsertionState.DELETED
+            return self.DELETED
 
 
 def main() -> int:
