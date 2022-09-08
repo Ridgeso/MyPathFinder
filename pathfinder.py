@@ -23,7 +23,7 @@ class App:
     grid_width: int
     grid_height: int
 
-    astar: NewAstar
+    astar: Astar
 
     colors: Dict[str, str]
 
@@ -42,7 +42,7 @@ class App:
         self.grid_width = self.win_width // self.board_size
         self.grid_height = self.win_height // self.board_size
 
-        self.astar = NewAstar(self.board_size, self.board_size)
+        self.astar = Astar(self.board_size, self.board_size)
 
         self.colors = {"path": "green",
                        "been": "red",
@@ -104,7 +104,7 @@ class App:
         if self.run_btn["text"] == "Start":
             # Reinitialization
             del self.astar
-            self.astar = NewAstar(self.board_size, self.board_size)
+            self.astar = Astar(self.board_size, self.board_size)
 
             self.fill_app()
             self.finished.config(text="Set the Start and End point to start")
@@ -179,7 +179,7 @@ class App:
         y, x = self.get_coordinates(event.y, event.x)
         self.set_grid(y, x, "wallF")
 
-    def draw_path(self, pos: NewGrid, mode: str) -> None:
+    def draw_path(self, pos: Grid, mode: str) -> None:
         if mode == "path":
             found_path = self.astar.recreate_path()
             for p in found_path:

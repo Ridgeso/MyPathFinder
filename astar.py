@@ -109,6 +109,7 @@ class Grid(IHeapItem):
     wall: bool
     previous: Optional['Grid']
     been_traveled: bool
+    is_path: bool
 
     f: float
     g: float
@@ -122,6 +123,7 @@ class Grid(IHeapItem):
         self.wall = wall
         self.previous = None
         self.been_traveled = False
+        self.is_path = False
 
         self.f = f_cost
         self.g = 0
@@ -152,15 +154,15 @@ class Grid(IHeapItem):
         self.index = value
 
 
-class AStar(np.ndarray):
+class Astar(np.ndarray):
     open_set: Heap
 
     start_pos: Optional[Grid]
     end_pos: Optional[Grid]
     current_pos: Optional[Grid]
 
-    def __new__(cls, width: int, height: int) -> 'AStar':
-        self =  super(AStar, cls).__new__(cls, (height, width), dtype=object)
+    def __new__(cls, width: int, height: int) -> 'Astar':
+        self =  super(Astar, cls).__new__(cls, (height, width), dtype=object)
 
         for j in range(self.shape[0]):
             for i in range(self.shape[1]):
@@ -236,6 +238,12 @@ class AStar(np.ndarray):
             pos = pos.previous
         return project_path
     
+    def set_path_flag(self) -> None:
+        pos = self.current_pos
+        while pos is not None:
+            pos.is_path = True
+            pos = pos.previous
+    
     def in_bounds(self, y: int, x: int) -> bool:
         return 0 <= y < self.shape[0] and 0 <= x < self.shape[1]
 
@@ -295,7 +303,8 @@ def main() -> int:
     delay = 0.5
     testit = True
 
-    astar = AStar(10, 10)
+    N = 10
+    astar = Astar(N, N)
     for i in astar:
         for j in i:
             j.wall = not random.randint(0, 4)
@@ -307,7 +316,7 @@ def main() -> int:
     def write() -> None:
         for level in astar:
             for g in level:
-                if g in path:
+                if g.is_path or g in path:
                     print('0', end=" ")
                 elif g.wall:
                     print('\\', end=" ")
@@ -319,34 +328,37 @@ def main() -> int:
 
     def run() -> str:
         nonlocal path
-        astar.open_set.heappush(astar.start_pos)
-        while astar.open_set:
-            astar.current_pos = astar.open_set.rem_fir()
+        
+        astar.init_finding()
+        
+        while astar.is_calculating():
+            astar.update_current_pos()
 
-            if display:
-                system('cls')
-                path = astar.recreate_path()
-                write()
-                sleep(delay)
+            system('cls')
+            path = astar.recreate_path()
+            write()
+            sleep(delay)
 
             state = astar.step()
             if state:
                 system('cls')
-                path = astar.recreate_path()
+                astar.set_path_flag()
                 write()
                 return "Path Found"
         return "Path Not Found"
 
     if display:
         print(run())
+
     else:
         start = perf_counter()
         if_path = astar.calculate_path()
         end = perf_counter() - start
-        if if_path:
-            path = astar.recreate_path()
+
         if not testit:
-            print(end * 1000)
+            if if_path:
+                astar.set_path_flag()
+            print(f"Took {end * 1000 :.2}")
             write()
 
     return 0

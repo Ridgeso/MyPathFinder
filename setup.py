@@ -5,7 +5,7 @@ import numpy as np
 
 setup(
     packages=find_packages(),
-    ext_modules=cythonize([Extension(name="astarc", sources=["astarc.pyx", "tools.c"])]),
+    ext_modules=cythonize([Extension(name="astarc", sources=["astarc.pyx"])]),
     include_dirs=[np.get_include()],
     options={
         "build": {
