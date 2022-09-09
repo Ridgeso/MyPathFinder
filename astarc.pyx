@@ -2,7 +2,7 @@ from time import sleep, perf_counter
 from random import randint
 
 from libc.stdio cimport printf
-from libc.stdlib cimport malloc, calloc, free
+from libc.stdlib cimport malloc, free
 
 
 cdef extern from "math.h":
@@ -279,7 +279,6 @@ cdef class Grid:
 
 ctypedef int InsertionState
 
-
 cdef class Astar:
     cdef int width, height
     cdef Astar_t astar
@@ -465,7 +464,7 @@ def main():
                 astar.set_wall(j, i, True)
 
     astar.set_start(0, 0)
-    astar.set_end(3, 3)
+    astar.set_end(N-1, N-1)
 
     cdef double start, end
     if display:
@@ -479,7 +478,7 @@ def main():
         if not testit:
             if if_path:
                 astar.set_path_flag()
-            printf("Took %0.4f\n", end * 1000)
+            printf("Took %0.4f ms\n", end * 1000)
             printAstar(&astar.astar)
 
     return 0

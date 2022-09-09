@@ -358,7 +358,7 @@ def main() -> int:
         if not testit:
             if if_path:
                 astar.set_path_flag()
-            print(f"Took {end * 1000 :.2}")
+            print(f"Took {end * 1000 :.2} ms")
             write()
 
     return 0

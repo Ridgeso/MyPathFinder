@@ -33,6 +33,7 @@ class App:
     reset_btn: Button
     speed: Scale
     finished: Label
+    points_label: Label
 
     def __init__(self, win_width: int, win_height: int) -> None:
         self.win_width = win_width
@@ -72,14 +73,18 @@ class App:
         self.reset_btn = Button(self.root, text="Reset", command=self.reset)
         self.speed = Scale(self.root, from_=0, to=40, orient=HORIZONTAL)
 
-        self.finished = Label(self.root, text="Set Start and End point to start")
+        self.finished = Label(self.root, text="Click run to start")
+        self.points_label = Label(self.root, text="Use s + leftB to set Start point| Use e + leftB to set End point")
 
         # Pack properties
         self.canvas.pack()
-        self.run_btn.pack()
-        self.reset_btn.pack()
-        self.speed.pack()
-        self.finished.pack()
+        # self.run_btn.pack(side=tk.LEFT)
+        self.run_btn.place(x=self.win_width//4, y=self.win_height+25)
+        # self.reset_btn.pack(side=tk.TOP)
+        self.reset_btn.place(x=3*self.win_width//4, y=self.win_height+25)
+        self.speed.pack(pady=7)
+        self.finished.pack(pady=7)
+        self.points_label.pack(pady=7)
 
     def run_app(self) -> None:
         self.root.mainloop()
@@ -185,20 +190,13 @@ class App:
             for p in found_path:
                 y = p.y * self.grid_height
                 x = p.x * self.grid_width
-                # self.draw_rect(y, x, self.colors["path"])
-                self.canvas.create_rectangle(
-                    x + self.shift, y + self.shift,
-                    x + self.grid_width + self.shift, y + self.grid_height + self.shift,
-                    fill=self.colors["path"]
-                )
+                self.draw_rect(y, x, self.colors["path"])
             return
 
         color = self.colors[mode]
-        self.canvas.create_rectangle(
-            pos.x * self.grid_width + self.shift, pos.y * self.grid_height + self.shift,
-            (pos.x + 1) * self.grid_width + self.shift, (pos.y + 1) * self.grid_height + self.shift,
-            fill=color
-        )
+        y = pos.y * self.grid_height
+        x = pos.x * self.grid_width
+        self.draw_rect(y, x, color)
 
     def _find_path(self) -> None:
         if self.astar.is_calculating():
